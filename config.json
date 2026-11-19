@@ -1,3 +1,4 @@
 {
-    "brightness": 30
+    "brightness": 30,
+    "threshold": 128
 }

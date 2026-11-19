@@ -8,17 +8,20 @@ from pathlib import Path
 # визначаємо папку проєкту
 BASE_DIR = Path(__file__).resolve().parent
 
-# визначаємо шлях до файлу налаштувань
+# визначаємо шлях до конфігураційного файлу
 CONFIG_PATH = BASE_DIR / "config.json"
 
 
 # функція завантаження налаштувань
 def load_config():
 
-    # встановлюємо стандартні параметри
-    default_config = {"brightness": 30}
+    # стандартні значення параметрів
+    default_config = {
+        "brightness": 30,
+        "threshold": 128
+    }
 
-    # якщо файлу немає, повертаємо стандартні параметри
+    # якщо файл відсутній
     if not CONFIG_PATH.exists():
         return default_config
 
@@ -28,41 +31,50 @@ def load_config():
         with open(CONFIG_PATH, "r", encoding="utf-8") as file:
             config = json.load(file)
 
-        # отримуємо яскравість
+        # зчитуємо параметри
         brightness_value = int(config.get("brightness", 30))
+        threshold_value = int(config.get("threshold", 128))
 
-        # перевіряємо діапазон
+        # перевіряємо значення яскравості
         if not -100 <= brightness_value <= 100:
             raise ValueError("Яскравість має бути від -100 до 100")
 
-        return {"brightness": brightness_value}
+        # перевіряємо значення порога
+        if not 0 <= threshold_value <= 255:
+            raise ValueError("Поріг має бути від 0 до 255")
+
+        return {
+            "brightness": brightness_value,
+            "threshold": threshold_value
+        }
 
     except (OSError, ValueError, TypeError) as error:
 
         # повідомляємо про помилку
         print(f"Помилка конфігурації: {error}")
 
+        # повертаємо стандартні параметри
         return default_config
 
 
-# завантажуємо конфігурацію
+# завантажуємо параметри
 config = load_config()
 
 
-# створюємо головне вікно програми
+# створюємо головне вікно
 window = tk.Tk()
 
-# задаємо назву вікна
+# задаємо назву програми
 window.title("STEM Image Processing")
 
 # задаємо розмір вікна
-window.geometry("1100x750")
+window.geometry("1100x800")
 
 # встановлюємо колір фону
 window.configure(bg="#f5f5f5")
 
 
-# змінні для збереження зображень
+# змінні для зберігання зображень
 original_image = None
 processed_image = None
 original_photo = None
@@ -72,17 +84,17 @@ processed_photo = None
 # перший алгоритм: відтінки сірого
 def grayscale(image):
 
-    # отримуємо ширину та висоту
+    # отримуємо розміри зображення
     width, height = image.size
 
     # створюємо нове зображення
     result = Image.new("RGB", (width, height))
 
-    # перебираємо всі пікселі
+    # перебираємо пікселі
     for y in range(height):
         for x in range(width):
 
-            # отримуємо кольорові складові
+            # отримуємо складові кольору
             r, g, b = image.getpixel((x, y))
 
             # обчислюємо яскравість
@@ -104,20 +116,20 @@ def grayscale(image):
 # другий алгоритм: корекція яскравості
 def brightness(image, value):
 
-    # отримуємо розміри зображення
+    # отримуємо ширину та висоту
     width, height = image.size
 
     # створюємо нове зображення
     result = Image.new("RGB", (width, height))
 
-    # перебираємо всі пікселі
+    # перебираємо пікселі
     for y in range(height):
         for x in range(width):
 
             # отримуємо складові кольору
             r, g, b = image.getpixel((x, y))
 
-            # змінюємо значення кожного каналу
+            # змінюємо значення каналів
             new_r = max(0, min(255, r + value))
             new_g = max(0, min(255, g + value))
             new_b = max(0, min(255, b + value))
@@ -137,29 +149,26 @@ def histogram_equalization(image):
     # перетворюємо зображення у відтінки сірого
     gray_image = grayscale(image)
 
-    # отримуємо ширину та висоту
+    # отримуємо розміри
     width, height = gray_image.size
 
-    # створюємо гістограму з 256 значень
+    # створюємо гістограму
     histogram = [0] * 256
 
-    # перебираємо всі пікселі зображення
+    # підраховуємо кількість пікселів кожної яскравості
     for y in range(height):
         for x in range(width):
 
-            # отримуємо значення яскравості
             gray = gray_image.getpixel((x, y))[0]
 
-            # збільшуємо кількість пікселів цієї яскравості
             histogram[gray] += 1
 
     # створюємо накопичену гістограму
     cdf = [0] * 256
 
-    # змінна для накопичення кількості пікселів
     total = 0
 
-    # обчислюємо накопичену гістограму
+    # обчислюємо накопичену кількість пікселів
     for i in range(256):
 
         total += histogram[i]
@@ -172,17 +181,17 @@ def histogram_equalization(image):
         0
     )
 
-    # обчислюємо загальну кількість пікселів
+    # обчислюємо кількість пікселів
     pixels_count = width * height
 
-    # якщо всі пікселі однакові, вирівнювання не потрібне
+    # якщо всі пікселі мають однакову яскравість
     if pixels_count == cdf_min:
         return gray_image
 
-    # створюємо таблицю перетворення яскравості
+    # створюємо таблицю нових значень
     lookup_table = [0] * 256
 
-    # обчислюємо нові значення яскравості
+    # обчислюємо нову яскравість
     for i in range(256):
 
         new_value = round(
@@ -190,8 +199,35 @@ def histogram_equalization(image):
             (pixels_count - cdf_min)
         )
 
-        # обмежуємо значення від 0 до 255
         lookup_table[i] = max(0, min(255, new_value))
+
+    # створюємо результат
+    result = Image.new("RGB", (width, height))
+
+    # змінюємо яскравість кожного пікселя
+    for y in range(height):
+        for x in range(width):
+
+            gray = gray_image.getpixel((x, y))[0]
+
+            new_gray = lookup_table[gray]
+
+            result.putpixel(
+                (x, y),
+                (new_gray, new_gray, new_gray)
+            )
+
+    return result
+
+
+# четвертий алгоритм: порогова сегментація
+def threshold_segmentation(image, threshold):
+
+    # перетворюємо зображення у відтінки сірого
+    gray_image = grayscale(image)
+
+    # отримуємо розміри зображення
+    width, height = gray_image.size
 
     # створюємо нове зображення
     result = Image.new("RGB", (width, height))
@@ -200,11 +236,19 @@ def histogram_equalization(image):
     for y in range(height):
         for x in range(width):
 
-            # отримуємо початкову яскравість
+            # отримуємо яскравість пікселя
             gray = gray_image.getpixel((x, y))[0]
 
-            # знаходимо нову яскравість у таблиці
-            new_gray = lookup_table[gray]
+            # порівнюємо яскравість із порогом
+            if gray < threshold:
+
+                # робимо піксель чорним
+                new_gray = 0
+
+            else:
+
+                # робимо піксель білим
+                new_gray = 255
 
             # записуємо новий піксель
             result.putpixel(
@@ -212,7 +256,7 @@ def histogram_equalization(image):
                 (new_gray, new_gray, new_gray)
             )
 
-    # повертаємо оброблене зображення
+    # повертаємо результат
     return result
 
 
@@ -222,7 +266,7 @@ def show_image(image, label):
     # створюємо копію зображення
     preview = image.copy()
 
-    # зменшуємо зображення для перегляду
+    # зменшуємо копію для перегляду
     preview.thumbnail((450, 400))
 
     # перетворюємо зображення для tkinter
@@ -253,7 +297,7 @@ def load_image():
         ]
     )
 
-    # якщо файл не вибрано
+    # перевіряємо, чи вибрано файл
     if not file_path:
         return
 
@@ -293,7 +337,7 @@ def process_image():
 
     global processed_image, processed_photo
 
-    # перевіряємо, чи завантажено зображення
+    # перевіряємо наявність зображення
     if original_image is None:
 
         messagebox.showwarning(
@@ -315,7 +359,6 @@ def process_image():
     # другий метод
     elif method == "Корекція яскравості":
 
-        # отримуємо значення повзунка
         value = int(brightness_slider.get())
 
         processed_image = brightness(
@@ -330,7 +373,19 @@ def process_image():
             original_image
         )
 
-    # інші методи поки не реалізовані
+    # четвертий метод
+    elif method == "Порогова сегментація":
+
+        # отримуємо значення порога
+        threshold_value = int(threshold_slider.get())
+
+        # застосовуємо порогову сегментацію
+        processed_image = threshold_segmentation(
+            original_image,
+            threshold_value
+        )
+
+    # п'ятий метод поки не реалізовано
     else:
 
         messagebox.showinfo(
@@ -339,7 +394,7 @@ def process_image():
         )
         return
 
-    # відображаємо результат
+    # показуємо результат
     processed_photo = show_image(
         processed_image,
         processed_label
@@ -371,7 +426,7 @@ def save_image():
 
         try:
 
-            # зберігаємо оброблене зображення
+            # зберігаємо результат
             processed_image.save(file_path)
 
             messagebox.showinfo(
@@ -395,7 +450,7 @@ title = tk.Label(
     bg="#f5f5f5"
 )
 
-title.pack(pady=20)
+title.pack(pady=15)
 
 
 # створюємо панель керування
@@ -404,7 +459,7 @@ control_frame = tk.Frame(
     bg="#f5f5f5"
 )
 
-control_frame.pack(pady=15)
+control_frame.pack(pady=10)
 
 
 # кнопка завантаження
@@ -422,7 +477,7 @@ load_button.grid(
 )
 
 
-# список методів обробки
+# список методів
 methods = [
     "Відтінки сірого",
     "Корекція яскравості",
@@ -431,12 +486,12 @@ methods = [
     "Морфологічна обробка"
 ]
 
-# змінна для вибраного методу
+# змінна вибраного методу
 selected_method = tk.StringVar(
     value=methods[0]
 )
 
-# створюємо випадний список
+# випадний список
 method_menu = ttk.Combobox(
     control_frame,
     textvariable=selected_method,
@@ -491,7 +546,7 @@ settings_frame = tk.Frame(
 settings_frame.pack(pady=10)
 
 
-# підпис повзунка
+# підпис яскравості
 brightness_label = tk.Label(
     settings_frame,
     text="Яскравість:",
@@ -499,8 +554,9 @@ brightness_label = tk.Label(
     bg="#f5f5f5"
 )
 
-brightness_label.pack(
-    side="left",
+brightness_label.grid(
+    row=0,
+    column=0,
     padx=10
 )
 
@@ -511,16 +567,55 @@ brightness_slider = tk.Scale(
     from_=-100,
     to=100,
     orient="horizontal",
-    length=350,
+    length=300,
     bg="#f5f5f5"
 )
 
-# встановлюємо значення з конфігурації
 brightness_slider.set(
     config["brightness"]
 )
 
-brightness_slider.pack(side="left")
+brightness_slider.grid(
+    row=0,
+    column=1,
+    padx=10
+)
+
+
+# підпис порога
+threshold_label = tk.Label(
+    settings_frame,
+    text="Поріг:",
+    font=("Arial", 12),
+    bg="#f5f5f5"
+)
+
+threshold_label.grid(
+    row=1,
+    column=0,
+    padx=10
+)
+
+
+# повзунок порогової сегментації
+threshold_slider = tk.Scale(
+    settings_frame,
+    from_=0,
+    to=255,
+    orient="horizontal",
+    length=300,
+    bg="#f5f5f5"
+)
+
+threshold_slider.set(
+    config["threshold"]
+)
+
+threshold_slider.grid(
+    row=1,
+    column=1,
+    padx=10
+)
 
 
 # створюємо область зображень
@@ -529,7 +624,7 @@ images_frame = tk.Frame(
     bg="#f5f5f5"
 )
 
-images_frame.pack(pady=15)
+images_frame.pack(pady=10)
 
 
 # область оригінального зображення
