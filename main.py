@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-# визначаємо папку, в якій знаходиться програма
+# визначаємо папку проєкту
 BASE_DIR = Path(__file__).resolve().parent
 
 # визначаємо шлях до файлу налаштувань
@@ -15,10 +15,10 @@ CONFIG_PATH = BASE_DIR / "config.json"
 # функція завантаження налаштувань
 def load_config():
 
-    # стандартне значення яскравості
+    # встановлюємо стандартні параметри
     default_config = {"brightness": 30}
 
-    # якщо файл налаштувань відсутній
+    # якщо файлу немає, повертаємо стандартні параметри
     if not CONFIG_PATH.exists():
         return default_config
 
@@ -28,32 +28,31 @@ def load_config():
         with open(CONFIG_PATH, "r", encoding="utf-8") as file:
             config = json.load(file)
 
-        # отримуємо значення яскравості
-        brightness = int(config.get("brightness", 30))
+        # отримуємо яскравість
+        brightness_value = int(config.get("brightness", 30))
 
-        # перевіряємо допустимий діапазон
-        if not -100 <= brightness <= 100:
+        # перевіряємо діапазон
+        if not -100 <= brightness_value <= 100:
             raise ValueError("Яскравість має бути від -100 до 100")
 
-        return {"brightness": brightness}
+        return {"brightness": brightness_value}
 
     except (OSError, ValueError, TypeError) as error:
 
-        # повідомляємо про помилку налаштувань
+        # повідомляємо про помилку
         print(f"Помилка конфігурації: {error}")
 
-        # використовуємо стандартні налаштування
         return default_config
 
 
-# завантажуємо налаштування
+# завантажуємо конфігурацію
 config = load_config()
 
 
-# створюємо головне вікно
+# створюємо головне вікно програми
 window = tk.Tk()
 
-# задаємо назву програми
+# задаємо назву вікна
 window.title("STEM Image Processing")
 
 # задаємо розмір вікна
@@ -70,7 +69,7 @@ original_photo = None
 processed_photo = None
 
 
-# перший алгоритм: перетворення у відтінки сірого
+# перший алгоритм: відтінки сірого
 def grayscale(image):
 
     # отримуємо ширину та висоту
@@ -83,7 +82,7 @@ def grayscale(image):
     for y in range(height):
         for x in range(width):
 
-            # отримуємо складові пікселя
+            # отримуємо кольорові складові
             r, g, b = image.getpixel((x, y))
 
             # обчислюємо яскравість
@@ -93,20 +92,19 @@ def grayscale(image):
                 0.114 * b
             )
 
-            # записуємо значення пікселя
+            # записуємо сірий піксель
             result.putpixel(
                 (x, y),
                 (gray, gray, gray)
             )
 
-    # повертаємо результат
     return result
 
 
 # другий алгоритм: корекція яскравості
 def brightness(image, value):
 
-    # отримуємо ширину та висоту
+    # отримуємо розміри зображення
     width, height = image.size
 
     # створюємо нове зображення
@@ -119,19 +117,99 @@ def brightness(image, value):
             # отримуємо складові кольору
             r, g, b = image.getpixel((x, y))
 
-            # змінюємо червону складову
+            # змінюємо значення кожного каналу
             new_r = max(0, min(255, r + value))
-
-            # змінюємо зелену складову
             new_g = max(0, min(255, g + value))
-
-            # змінюємо синю складову
             new_b = max(0, min(255, b + value))
 
             # записуємо новий піксель
             result.putpixel(
                 (x, y),
                 (new_r, new_g, new_b)
+            )
+
+    return result
+
+
+# третій алгоритм: гістограмне вирівнювання
+def histogram_equalization(image):
+
+    # перетворюємо зображення у відтінки сірого
+    gray_image = grayscale(image)
+
+    # отримуємо ширину та висоту
+    width, height = gray_image.size
+
+    # створюємо гістограму з 256 значень
+    histogram = [0] * 256
+
+    # перебираємо всі пікселі зображення
+    for y in range(height):
+        for x in range(width):
+
+            # отримуємо значення яскравості
+            gray = gray_image.getpixel((x, y))[0]
+
+            # збільшуємо кількість пікселів цієї яскравості
+            histogram[gray] += 1
+
+    # створюємо накопичену гістограму
+    cdf = [0] * 256
+
+    # змінна для накопичення кількості пікселів
+    total = 0
+
+    # обчислюємо накопичену гістограму
+    for i in range(256):
+
+        total += histogram[i]
+
+        cdf[i] = total
+
+    # знаходимо перше ненульове значення
+    cdf_min = next(
+        (value for value in cdf if value > 0),
+        0
+    )
+
+    # обчислюємо загальну кількість пікселів
+    pixels_count = width * height
+
+    # якщо всі пікселі однакові, вирівнювання не потрібне
+    if pixels_count == cdf_min:
+        return gray_image
+
+    # створюємо таблицю перетворення яскравості
+    lookup_table = [0] * 256
+
+    # обчислюємо нові значення яскравості
+    for i in range(256):
+
+        new_value = round(
+            255 * (cdf[i] - cdf_min) /
+            (pixels_count - cdf_min)
+        )
+
+        # обмежуємо значення від 0 до 255
+        lookup_table[i] = max(0, min(255, new_value))
+
+    # створюємо нове зображення
+    result = Image.new("RGB", (width, height))
+
+    # перебираємо всі пікселі
+    for y in range(height):
+        for x in range(width):
+
+            # отримуємо початкову яскравість
+            gray = gray_image.getpixel((x, y))[0]
+
+            # знаходимо нову яскравість у таблиці
+            new_gray = lookup_table[gray]
+
+            # записуємо новий піксель
+            result.putpixel(
+                (x, y),
+                (new_gray, new_gray, new_gray)
             )
 
     # повертаємо оброблене зображення
@@ -141,16 +219,16 @@ def brightness(image, value):
 # функція відображення зображення
 def show_image(image, label):
 
-    # створюємо копію
+    # створюємо копію зображення
     preview = image.copy()
 
-    # зменшуємо копію для вікна
+    # зменшуємо зображення для перегляду
     preview.thumbnail((450, 400))
 
-    # створюємо об'єкт для tkinter
+    # перетворюємо зображення для tkinter
     photo = ImageTk.PhotoImage(preview)
 
-    # показуємо зображення
+    # відображаємо зображення
     label.config(
         image=photo,
         text=""
@@ -215,7 +293,7 @@ def process_image():
 
     global processed_image, processed_photo
 
-    # перевіряємо наявність зображення
+    # перевіряємо, чи завантажено зображення
     if original_image is None:
 
         messagebox.showwarning(
@@ -227,26 +305,32 @@ def process_image():
     # отримуємо вибраний метод
     method = selected_method.get()
 
-    # перетворення у відтінки сірого
+    # перший метод
     if method == "Відтінки сірого":
 
         processed_image = grayscale(
             original_image
         )
 
-    # корекція яскравості
+    # другий метод
     elif method == "Корекція яскравості":
 
         # отримуємо значення повзунка
         value = int(brightness_slider.get())
 
-        # застосовуємо алгоритм
         processed_image = brightness(
             original_image,
             value
         )
 
-    # інші алгоритми ще не реалізовані
+    # третій метод
+    elif method == "Гістограмне вирівнювання":
+
+        processed_image = histogram_equalization(
+            original_image
+        )
+
+    # інші методи поки не реалізовані
     else:
 
         messagebox.showinfo(
@@ -274,7 +358,7 @@ def save_image():
         )
         return
 
-    # вибираємо місце збереження
+    # відкриваємо вікно збереження
     file_path = filedialog.asksaveasfilename(
         defaultextension=".png",
         filetypes=[
@@ -283,12 +367,11 @@ def save_image():
         ]
     )
 
-    # якщо шлях вибрано
     if file_path:
 
         try:
 
-            # зберігаємо результат
+            # зберігаємо оброблене зображення
             processed_image.save(file_path)
 
             messagebox.showinfo(
@@ -304,7 +387,7 @@ def save_image():
             )
 
 
-# створюємо заголовок
+# створюємо заголовок програми
 title = tk.Label(
     window,
     text="Обробка зображень текстових документів",
@@ -348,12 +431,12 @@ methods = [
     "Морфологічна обробка"
 ]
 
-# змінна вибраного методу
+# змінна для вибраного методу
 selected_method = tk.StringVar(
     value=methods[0]
 )
 
-# випадний список
+# створюємо випадний список
 method_menu = ttk.Combobox(
     control_frame,
     textvariable=selected_method,
@@ -399,7 +482,7 @@ save_button.grid(
 )
 
 
-# створюємо блок налаштування яскравості
+# панель налаштувань
 settings_frame = tk.Frame(
     window,
     bg="#f5f5f5"
@@ -416,10 +499,13 @@ brightness_label = tk.Label(
     bg="#f5f5f5"
 )
 
-brightness_label.pack(side="left", padx=10)
+brightness_label.pack(
+    side="left",
+    padx=10
+)
 
 
-# створюємо повзунок
+# повзунок яскравості
 brightness_slider = tk.Scale(
     settings_frame,
     from_=-100,
@@ -430,7 +516,9 @@ brightness_slider = tk.Scale(
 )
 
 # встановлюємо значення з конфігурації
-brightness_slider.set(config["brightness"])
+brightness_slider.set(
+    config["brightness"]
+)
 
 brightness_slider.pack(side="left")
 
@@ -463,7 +551,7 @@ original_frame.grid(
 original_frame.pack_propagate(False)
 
 
-# область результату обробки
+# область результату
 processed_frame = tk.LabelFrame(
     images_frame,
     text="Результат обробки",
@@ -493,7 +581,7 @@ original_label = tk.Label(
 original_label.pack(expand=True)
 
 
-# підпис результату
+# підпис обробленого зображення
 processed_label = tk.Label(
     processed_frame,
     text="Результат обробки",
