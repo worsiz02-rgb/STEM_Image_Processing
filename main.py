@@ -1,16 +1,29 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
-import json
-import math
 from pathlib import Path
+from datetime import datetime
+
+import json
+import csv
+import math
+
+# імпортуємо п'ять алгоритмів обробки зображень
+from algorithms import (
+    grayscale,
+    brightness,
+    histogram_equalization,
+    threshold_segmentation,
+    morphology
+)
 
 # імпортуємо математичні метрики
-from metrics import calculate_mse, calculate_psnr, calculate_ssim
+from metrics import (
+    calculate_mse,
+    calculate_psnr,
+    calculate_ssim
+)
 
-# імпортуємо модулі для збереження результатів
-import csv
-from datetime import datetime
 
 # визначаємо папку проєкту
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,11 +31,14 @@ BASE_DIR = Path(__file__).resolve().parent
 # визначаємо шлях до конфігураційного файлу
 CONFIG_PATH = BASE_DIR / "config.json"
 
+# визначаємо папку для збереження результатів
+OUTPUT_DIR = BASE_DIR / "output"
+
 
 # функція завантаження налаштувань
 def load_config():
 
-    # стандартні значення параметрів
+    # стандартні параметри програми
     default_config = {
         "brightness": 30,
         "threshold": 128,
@@ -30,7 +46,7 @@ def load_config():
         "morphology_size": 3
     }
 
-    # якщо файл налаштувань відсутній
+    # якщо файл конфігурації відсутній
     if not CONFIG_PATH.exists():
         return default_config
 
@@ -40,17 +56,17 @@ def load_config():
         with open(CONFIG_PATH, "r", encoding="utf-8") as file:
             config = json.load(file)
 
-        # отримуємо значення параметрів
+        # отримуємо параметри
         brightness_value = int(config.get("brightness", 30))
         threshold_value = int(config.get("threshold", 128))
         operation = config.get("morphology_operation", "Ерозія")
         size = int(config.get("morphology_size", 3))
 
-        # перевіряємо значення яскравості
+        # перевіряємо діапазон яскравості
         if not -100 <= brightness_value <= 100:
             raise ValueError("Яскравість має бути від -100 до 100")
 
-        # перевіряємо значення порога
+        # перевіряємо діапазон порога
         if not 0 <= threshold_value <= 255:
             raise ValueError("Поріг має бути від 0 до 255")
 
@@ -62,7 +78,7 @@ def load_config():
         if size not in [3, 5]:
             raise ValueError("Розмір вікна має бути 3 або 5")
 
-        # повертаємо налаштування
+        # повертаємо параметри
         return {
             "brightness": brightness_value,
             "threshold": threshold_value,
@@ -75,7 +91,7 @@ def load_config():
         # повідомляємо про помилку
         print(f"Помилка конфігурації: {error}")
 
-        # використовуємо стандартні параметри
+        # використовуємо стандартні значення
         return default_config
 
 
@@ -86,10 +102,10 @@ config = load_config()
 # створюємо головне вікно програми
 window = tk.Tk()
 
-# задаємо назву вікна
+# встановлюємо назву вікна
 window.title("STEM Image Processing")
 
-# задаємо розмір вікна
+# встановлюємо розмір вікна
 window.geometry("1100x850")
 
 # встановлюємо колір фону
@@ -99,277 +115,19 @@ window.configure(bg="#f5f5f5")
 # змінні для зберігання зображень
 original_image = None
 processed_image = None
+
+# змінні для відображення зображень
 original_photo = None
 processed_photo = None
-
-
-# перший алгоритм: перетворення у відтінки сірого
-def grayscale(image):
-
-    # отримуємо ширину та висоту зображення
-    width, height = image.size
-
-    # створюємо нове зображення
-    result = Image.new("RGB", (width, height))
-
-    # перебираємо всі пікселі
-    for y in range(height):
-        for x in range(width):
-
-            # отримуємо складові кольору
-            r, g, b = image.getpixel((x, y))
-
-            # обчислюємо яскравість пікселя
-            gray = round(
-                0.299 * r +
-                0.587 * g +
-                0.114 * b
-            )
-
-            # записуємо сірий піксель
-            result.putpixel(
-                (x, y),
-                (gray, gray, gray)
-            )
-
-    # повертаємо оброблене зображення
-    return result
-
-
-# другий алгоритм: корекція яскравості
-def brightness(image, value):
-
-    # отримуємо розміри зображення
-    width, height = image.size
-
-    # створюємо нове зображення
-    result = Image.new("RGB", (width, height))
-
-    # перебираємо всі пікселі
-    for y in range(height):
-        for x in range(width):
-
-            # отримуємо кольорові складові
-            r, g, b = image.getpixel((x, y))
-
-            # змінюємо червону складову
-            new_r = max(0, min(255, r + value))
-
-            # змінюємо зелену складову
-            new_g = max(0, min(255, g + value))
-
-            # змінюємо синю складову
-            new_b = max(0, min(255, b + value))
-
-            # записуємо новий піксель
-            result.putpixel(
-                (x, y),
-                (new_r, new_g, new_b)
-            )
-
-    # повертаємо результат
-    return result
-
-
-# третій алгоритм: гістограмне вирівнювання
-def histogram_equalization(image):
-
-    # перетворюємо зображення у відтінки сірого
-    gray_image = grayscale(image)
-
-    # отримуємо ширину та висоту
-    width, height = gray_image.size
-
-    # створюємо гістограму з 256 значень
-    histogram = [0] * 256
-
-    # підраховуємо кількість пікселів кожної яскравості
-    for y in range(height):
-        for x in range(width):
-
-            # отримуємо яскравість пікселя
-            gray = gray_image.getpixel((x, y))[0]
-
-            # збільшуємо відповідне значення гістограми
-            histogram[gray] += 1
-
-    # створюємо накопичену гістограму
-    cdf = [0] * 256
-
-    # змінна для накопичення кількості пікселів
-    total = 0
-
-    # обчислюємо накопичену гістограму
-    for i in range(256):
-
-        total += histogram[i]
-
-        cdf[i] = total
-
-    # знаходимо перше ненульове значення
-    cdf_min = next(
-        (value for value in cdf if value > 0),
-        0
-    )
-
-    # обчислюємо загальну кількість пікселів
-    pixels_count = width * height
-
-    # якщо всі пікселі мають однакову яскравість
-    if pixels_count == cdf_min:
-        return gray_image
-
-    # створюємо таблицю перетворення
-    lookup_table = [0] * 256
-
-    # обчислюємо нову яскравість для кожного рівня
-    for i in range(256):
-
-        new_value = round(
-            255 * (cdf[i] - cdf_min) /
-            (pixels_count - cdf_min)
-        )
-
-        # обмежуємо значення від 0 до 255
-        lookup_table[i] = max(0, min(255, new_value))
-
-    # створюємо нове зображення
-    result = Image.new("RGB", (width, height))
-
-    # змінюємо яскравість усіх пікселів
-    for y in range(height):
-        for x in range(width):
-
-            # отримуємо початкову яскравість
-            gray = gray_image.getpixel((x, y))[0]
-
-            # знаходимо нову яскравість
-            new_gray = lookup_table[gray]
-
-            # записуємо результат
-            result.putpixel(
-                (x, y),
-                (new_gray, new_gray, new_gray)
-            )
-
-    return result
-
-
-# четвертий алгоритм: порогова сегментація
-def threshold_segmentation(image, threshold):
-
-    # перетворюємо зображення у відтінки сірого
-    gray_image = grayscale(image)
-
-    # отримуємо розміри зображення
-    width, height = gray_image.size
-
-    # створюємо нове зображення
-    result = Image.new("RGB", (width, height))
-
-    # перебираємо всі пікселі
-    for y in range(height):
-        for x in range(width):
-
-            # отримуємо яскравість пікселя
-            gray = gray_image.getpixel((x, y))[0]
-
-            # порівнюємо яскравість із порогом
-            if gray < threshold:
-
-                # робимо піксель чорним
-                new_gray = 0
-
-            else:
-
-                # робимо піксель білим
-                new_gray = 255
-
-            # записуємо новий піксель
-            result.putpixel(
-                (x, y),
-                (new_gray, new_gray, new_gray)
-            )
-
-    return result
-
-
-# п'ятий алгоритм: морфологічна обробка
-def morphology(image, operation, size):
-
-    # перевіряємо правильність параметрів
-    if operation not in ["Ерозія", "Дилатація"]:
-        raise ValueError("Невідома морфологічна операція")
-
-    if size not in [3, 5]:
-        raise ValueError("Розмір вікна має бути 3 або 5")
-
-    # перетворюємо зображення у відтінки сірого
-    gray_image = grayscale(image)
-
-    # отримуємо розміри зображення
-    width, height = gray_image.size
-
-    # створюємо нове зображення
-    result = Image.new("RGB", (width, height))
-
-    # обчислюємо радіус вікна
-    radius = size // 2
-
-    # перебираємо всі пікселі зображення
-    for y in range(height):
-        for x in range(width):
-
-            # створюємо список значень сусідніх пікселів
-            neighbors = []
-
-            # перебираємо рядки вікна
-            for dy in range(-radius, radius + 1):
-
-                # перебираємо стовпці вікна
-                for dx in range(-radius, radius + 1):
-
-                    # обчислюємо координати сусіднього пікселя
-                    nx = x + dx
-                    ny = y + dy
-
-                    # перевіряємо межі зображення
-                    if 0 <= nx < width and 0 <= ny < height:
-
-                        # отримуємо яскравість сусіда
-                        gray = gray_image.getpixel((nx, ny))[0]
-
-                        # додаємо значення до списку
-                        neighbors.append(gray)
-
-            # виконуємо ерозію
-            if operation == "Ерозія":
-
-                # вибираємо мінімальну яскравість
-                new_gray = min(neighbors)
-
-            # виконуємо дилатацію
-            else:
-
-                # вибираємо максимальну яскравість
-                new_gray = max(neighbors)
-
-            # записуємо результат
-            result.putpixel(
-                (x, y),
-                (new_gray, new_gray, new_gray)
-            )
-
-    return result
 
 
 # функція відображення зображення
 def show_image(image, label):
 
-    # створюємо копію
+    # створюємо копію зображення
     preview = image.copy()
 
-    # зменшуємо копію для вікна
+    # зменшуємо копію для перегляду
     preview.thumbnail((450, 400))
 
     # перетворюємо зображення для tkinter
@@ -400,7 +158,7 @@ def load_image():
         ]
     )
 
-    # якщо користувач не вибрав файл
+    # якщо файл не вибрано
     if not file_path:
         return
 
@@ -410,7 +168,7 @@ def load_image():
         with Image.open(file_path) as image:
             original_image = image.convert("RGB")
 
-        # відображаємо оригінальне зображення
+        # показуємо оригінал
         original_photo = show_image(
             original_image,
             original_label
@@ -420,6 +178,7 @@ def load_image():
         processed_image = None
         processed_photo = None
 
+        # очищаємо область результату
         processed_label.config(
             image="",
             text="Результат обробки"
@@ -427,41 +186,56 @@ def load_image():
 
         processed_label.image = None
 
+        # очищаємо попередні метрики
+        metrics_label.config(
+            text="MSE: —   |   PSNR: —   |   Global SSIM: —"
+        )
+
     except (OSError, ValueError) as error:
 
         messagebox.showerror(
             "Помилка",
             f"Не вдалося відкрити зображення:\n{error}"
         )
+
+
 # функція автоматичного збереження результатів
 def save_experiment(image, method, mse, psnr, ssim):
 
     # створюємо папку результатів
-    output_dir = BASE_DIR / "output"
-    output_dir.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(exist_ok=True)
 
-    # створюємо унікальну назву запуску
+    # формуємо унікальну назву запуску
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-    # формуємо шлях до зображення
-    image_path = output_dir / f"result_{timestamp}.png"
+    # визначаємо шлях до зображення
+    image_path = OUTPUT_DIR / f"result_{timestamp}.png"
 
     # зберігаємо оброблене зображення
     image.save(image_path)
 
     # визначаємо шлях до CSV-файлу
-    csv_path = output_dir / "metrics.csv"
+    csv_path = OUTPUT_DIR / "metrics.csv"
 
-    # перевіряємо, чи існує файл
-    file_exists = csv_path.exists() and csv_path.stat().st_size > 0
+    # перевіряємо, чи існує таблиця результатів
+    file_exists = (
+        csv_path.exists() and
+        csv_path.stat().st_size > 0
+    )
 
-    # відкриваємо файл для додавання результатів
-    with open(csv_path, "a", newline="", encoding="utf-8") as file:
+    # відкриваємо CSV-файл
+    with open(
+        csv_path,
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as file:
 
         writer = csv.writer(file)
 
-        # записуємо заголовки під час першого запуску
+        # записуємо заголовки, якщо файл новий
         if not file_exists:
+
             writer.writerow([
                 "datetime",
                 "method",
@@ -483,12 +257,13 @@ def save_experiment(image, method, mse, psnr, ssim):
 
     return image_path
 
+
 # функція обробки зображення
 def process_image():
 
     global processed_image, processed_photo
 
-    # перевіряємо наявність зображення
+    # перевіряємо, чи завантажено зображення
     if original_image is None:
 
         messagebox.showwarning(
@@ -502,14 +277,14 @@ def process_image():
 
     try:
 
-        # перший метод
+        # перший алгоритм: відтінки сірого
         if method == "Відтінки сірого":
 
             processed_image = grayscale(
                 original_image
             )
 
-        # другий метод
+        # другий алгоритм: корекція яскравості
         elif method == "Корекція яскравості":
 
             # отримуємо значення повзунка
@@ -521,14 +296,14 @@ def process_image():
                 value
             )
 
-        # третій метод
+        # третій алгоритм: гістограмне вирівнювання
         elif method == "Гістограмне вирівнювання":
 
             processed_image = histogram_equalization(
                 original_image
             )
 
-        # четвертий метод
+        # четвертий алгоритм: порогова сегментація
         elif method == "Порогова сегментація":
 
             # отримуємо значення порога
@@ -540,7 +315,7 @@ def process_image():
                 threshold_value
             )
 
-        # п'ятий метод
+        # п'ятий алгоритм: морфологічна обробка
         elif method == "Морфологічна обробка":
 
             # отримуємо вибрану операцію
@@ -549,7 +324,7 @@ def process_image():
             # отримуємо розмір вікна
             size = int(selected_size.get())
 
-            # застосовуємо морфологічну обробку
+            # застосовуємо алгоритм
             processed_image = morphology(
                 original_image,
                 operation,
@@ -565,7 +340,7 @@ def process_image():
             )
             return
 
-        # показуємо оброблене зображення
+        # відображаємо результат
         processed_photo = show_image(
             processed_image,
             processed_label
@@ -583,23 +358,29 @@ def process_image():
             processed_image
         )
 
-        # обчислюємо глобальний SSIM
+        # обчислюємо Global SSIM
         ssim = calculate_ssim(
             original_image,
             processed_image
         )
 
-        # формуємо текст із результатами
-        psnr_text = "∞" if math.isinf(psnr) else f"{psnr:.2f}"
+        # формуємо текст PSNR
+        if math.isinf(psnr):
+            psnr_text = "∞"
+        else:
+            psnr_text = f"{psnr:.2f}"
 
+        # формуємо рядок з метриками
         metrics_text = (
             f"MSE: {mse:.2f}   |   "
             f"PSNR: {psnr_text} dB   |   "
             f"Global SSIM: {ssim:.4f}"
         )
 
-        # показуємо метрики у вікні
-        metrics_label.config(text=metrics_text)
+        # відображаємо метрики у вікні
+        metrics_label.config(
+            text=metrics_text
+        )
 
         # автоматично зберігаємо результати
         save_experiment(
@@ -619,10 +400,10 @@ def process_image():
         )
 
 
-# функція збереження результату
+# функція ручного збереження зображення
 def save_image():
 
-    # перевіряємо, чи є результат
+    # перевіряємо наявність результату
     if processed_image is None:
 
         messagebox.showwarning(
@@ -792,8 +573,9 @@ brightness_slider = tk.Scale(
     bg="#f5f5f5"
 )
 
-# встановлюємо значення з конфігурації
-brightness_slider.set(config["brightness"])
+brightness_slider.set(
+    config["brightness"]
+)
 
 brightness_slider.grid(
     row=0,
@@ -802,7 +584,7 @@ brightness_slider.grid(
 )
 
 
-# підпис порогової сегментації
+# підпис порога
 threshold_label = tk.Label(
     settings_frame,
     text="Поріг:",
@@ -827,8 +609,9 @@ threshold_slider = tk.Scale(
     bg="#f5f5f5"
 )
 
-# встановлюємо значення з конфігурації
-threshold_slider.set(config["threshold"])
+threshold_slider.set(
+    config["threshold"]
+)
 
 threshold_slider.grid(
     row=1,
@@ -837,7 +620,7 @@ threshold_slider.grid(
 )
 
 
-# створюємо панель морфологічної обробки
+# панель морфологічної обробки
 morphology_frame = tk.Frame(
     window,
     bg="#f5f5f5"
@@ -920,7 +703,7 @@ size_menu.grid(
 )
 
 
-# створюємо область для зображень
+# створюємо область зображень
 images_frame = tk.Frame(
     window,
     bg="#f5f5f5"
@@ -988,7 +771,8 @@ processed_label = tk.Label(
 
 processed_label.pack(expand=True)
 
-# створюємо підпис для математичних метрик
+
+# створюємо підпис математичних метрик
 metrics_label = tk.Label(
     window,
     text="MSE: —   |   PSNR: —   |   Global SSIM: —",
@@ -997,7 +781,6 @@ metrics_label = tk.Label(
     fg="#333333"
 )
 
-# розміщуємо метрики під зображеннями
 metrics_label.pack(pady=10)
 
 
