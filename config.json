@@ -1,4 +1,6 @@
 {
     "brightness": 30,
-    "threshold": 128
+    "threshold": 128,
+    "morphology_operation": "Ерозія",
+    "morphology_size": 3
 }
