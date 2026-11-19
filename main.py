@@ -2,8 +2,15 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 from PIL import Image, ImageTk
 import json
+import math
 from pathlib import Path
 
+# імпортуємо математичні метрики
+from metrics import calculate_mse, calculate_psnr, calculate_ssim
+
+# імпортуємо модулі для збереження результатів
+import csv
+from datetime import datetime
 
 # визначаємо папку проєкту
 BASE_DIR = Path(__file__).resolve().parent
@@ -426,7 +433,55 @@ def load_image():
             "Помилка",
             f"Не вдалося відкрити зображення:\n{error}"
         )
+# функція автоматичного збереження результатів
+def save_experiment(image, method, mse, psnr, ssim):
 
+    # створюємо папку результатів
+    output_dir = BASE_DIR / "output"
+    output_dir.mkdir(exist_ok=True)
+
+    # створюємо унікальну назву запуску
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+    # формуємо шлях до зображення
+    image_path = output_dir / f"result_{timestamp}.png"
+
+    # зберігаємо оброблене зображення
+    image.save(image_path)
+
+    # визначаємо шлях до CSV-файлу
+    csv_path = output_dir / "metrics.csv"
+
+    # перевіряємо, чи існує файл
+    file_exists = csv_path.exists() and csv_path.stat().st_size > 0
+
+    # відкриваємо файл для додавання результатів
+    with open(csv_path, "a", newline="", encoding="utf-8") as file:
+
+        writer = csv.writer(file)
+
+        # записуємо заголовки під час першого запуску
+        if not file_exists:
+            writer.writerow([
+                "datetime",
+                "method",
+                "image_path",
+                "mse",
+                "psnr",
+                "global_ssim"
+            ])
+
+        # записуємо результати експерименту
+        writer.writerow([
+            timestamp,
+            method,
+            image_path.name,
+            mse,
+            psnr,
+            ssim
+        ])
+
+    return image_path
 
 # функція обробки зображення
 def process_image():
@@ -514,6 +569,45 @@ def process_image():
         processed_photo = show_image(
             processed_image,
             processed_label
+        )
+
+        # обчислюємо MSE
+        mse = calculate_mse(
+            original_image,
+            processed_image
+        )
+
+        # обчислюємо PSNR
+        psnr = calculate_psnr(
+            original_image,
+            processed_image
+        )
+
+        # обчислюємо глобальний SSIM
+        ssim = calculate_ssim(
+            original_image,
+            processed_image
+        )
+
+        # формуємо текст із результатами
+        psnr_text = "∞" if math.isinf(psnr) else f"{psnr:.2f}"
+
+        metrics_text = (
+            f"MSE: {mse:.2f}   |   "
+            f"PSNR: {psnr_text} dB   |   "
+            f"Global SSIM: {ssim:.4f}"
+        )
+
+        # показуємо метрики у вікні
+        metrics_label.config(text=metrics_text)
+
+        # автоматично зберігаємо результати
+        save_experiment(
+            processed_image,
+            method,
+            mse,
+            psnr,
+            ssim
         )
 
     except (ValueError, OSError) as error:
@@ -893,6 +987,18 @@ processed_label = tk.Label(
 )
 
 processed_label.pack(expand=True)
+
+# створюємо підпис для математичних метрик
+metrics_label = tk.Label(
+    window,
+    text="MSE: —   |   PSNR: —   |   Global SSIM: —",
+    font=("Arial", 13, "bold"),
+    bg="#f5f5f5",
+    fg="#333333"
+)
+
+# розміщуємо метрики під зображеннями
+metrics_label.pack(pady=10)
 
 
 # запускаємо головний цикл програми
